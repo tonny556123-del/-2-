@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>曲線的局部特徵與切線斜率</title>
+  <style>
+    :root {
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --success: #16a34a;
+      --danger: #dc2626;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --text: #1e293b;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+    body { background-color: var(--bg); color: var(--text); padding: 16px; line-height: 1.6; }
+    .container { max-width: 1240px; margin: 0 auto; display: grid; grid-template-columns: 1fr 400px; gap: 20px; }
+    @media (max-width: 960px) { .container { grid-template-columns: 1fr; } }
+    
+    header { grid-column: 1 / -1; margin-bottom: 4px; }
+    h1 { font-size: 1.6rem; color: #0f172a; margin-bottom: 4px; }
+    p.subtitle { color: var(--text-muted); font-size: 0.95rem; }
+
+    .card { background: var(--card-bg); border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); padding: 18px; }
+    
+    /* 畫布容器 */
+    .canvas-container { position: relative; width: 100%; aspect-ratio: 4 / 3; min-height: 440px; background: #fff; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); user-select: none; }
+    canvas { width: 100%; height: 100%; display: block; cursor: crosshair; }
+
+    .zoom-toolbar {
+      position: absolute;
+      right: 12px;
+      bottom: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      z-index: 10;
+    }
+    .zoom-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.92);
+      color: #0f172a;
+      font-size: 1.2rem;
+      font-weight: bold;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .zoom-btn:hover { background: #f1f5f9; }
+
+    .zoom-hud {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      background: rgba(15, 23, 42, 0.85);
+      color: #fff;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      pointer-events: none;
+      backdrop-filter: blur(4px);
+      z-index: 10;
+    }
+
+    /* 任務引導面板 */
+    .inquiry-panel { display: flex; flex-direction: column; gap: 16px; }
+    .step-indicator { display: flex; justify-content: space-between; align-items: center; background: #eff6ff; padding: 10px 14px; border-radius: 8px; border-left: 4px solid var(--primary); }
+    .step-title { font-weight: 700; color: #1e3a8a; font-size: 0.98rem; }
+    .step-counter { font-size: 0.82rem; font-weight: 600; color: var(--primary); background: #fff; padding: 2px 8px; border-radius: 12px; }
+
+    .step-content { display: flex; flex-direction: column; gap: 12px; font-size: 0.92rem; }
+    .btn-action { background: var(--primary); color: #fff; border: none; padding: 10px 14px; border-radius: 8px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; transition: 0.2s; }
+    .btn-action:hover { background: var(--primary-hover); }
+    .btn-secondary { background: #f1f5f9; color: var(--text); border: 1px solid var(--border); padding: 8px 12px; border-radius: 6px; font-weight: 500; cursor: pointer; }
+    .btn-secondary:hover { background: #e2e8f0; }
+
+    .btn-group { display: flex; gap: 8px; margin-top: 8px; }
+
+    /* 題目選項樣式 */
+    .quiz-options { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+    .quiz-option { display: flex; align-items: center; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; transition: 0.15s; background: #fff; font-size: 0.9rem; }
+    .quiz-option:hover { background: #f8fafc; border-color: #cbd5e1; }
+    .quiz-option.selected { border-color: var(--primary); background: #eff6ff; font-weight: 600; }
+    .quiz-feedback { padding: 10px; border-radius: 6px; font-size: 0.88rem; margin-top: 6px; display: none; }
+    .quiz-feedback.correct { display: block; background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+    .quiz-feedback.wrong { display: block; background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+
+    .control-item { display: flex; flex-direction: column; gap: 6px; }
+    .control-item label { font-size: 0.85rem; font-weight: 600; display: flex; justify-content: space-between; }
+    input[type="range"] { accent-color: var(--primary); cursor: pointer; }
+
+    .math-pill { font-family: "Courier New", Courier, monospace; font-weight: 700; color: #0f172a; background: #e2e8f0; padding: 1px 6px; border-radius: 4px; }
+    .definition-box { background: #eff6ff; border: 1.5px solid #bfdbfe; border-radius: 8px; padding: 14px; margin-top: 6px; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <h1>曲線的局部特徵與切線斜率</h1>
+    <p class="subtitle">探索函數 $f(x) = x^3 - 2x$：從「微觀直線化」到「割線逼近切線斜率」</p>
+  </header>
+
+  <!-- 繪圖畫布區 -->
+  <div class="card">
+    <div class="canvas-container" id="canvasBox">
+      <canvas id="graphCanvas"></canvas>
+      <div class="zoom-hud" id="zoomHud">倍率：1.0x (支援滾輪/拖曳)</div>
+      <div class="zoom-toolbar">
+        <button class="zoom-btn" id="btnZoomIn" title="放大">+</button>
+        <button class="zoom-btn" id="btnZoomOut" title="縮小">−</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 引導式學習與測驗面板 -->
+  <div class="inquiry-panel">
+    <div class="card">
+      <div class="step-indicator">
+        <span class="step-title" id="stepHeader">步驟 1：任選曲線上的基準點</span>
+        <span class="step-counter" id="stepCounter">1 / 6</span>
+      </div>
+
+      <div style="margin-top: 14px;">
+        <!-- STEP 1 -->
+        <div class="step-content" id="step1">
+          <p>請在下方滑桿選擇，或直接在左側畫布的曲線上<b>點擊任意位置</b>作為觀察基準點 <span class="math-pill">A</span>：</p>
+          <div class="control-item">
+            <label>基準點 A 的位置 (x)：<span id="labelAVal" style="color:var(--primary);">x = 1.00</span></label>
+            <input type="range" id="sliderA" min="-1.8" max="1.8" step="0.05" value="1.0">
+          </div>
+          <button class="btn-action" onclick="goToStep(2)">選定好了，下一步 ➔</button>
+        </div>
+
+        <!-- STEP 2 -->
+        <div class="step-content" id="step2" style="display:none;">
+          <p>現在讓我們將點 <span class="math-pill">A</span> 所在的局部位置<b>放大、放大、再放大</b>！</p>
+          <button class="btn-action" id="btnDeepZoom">🔍 一鍵極致放大 (80x)</button>
+          <div class="quiz-feedback correct" id="zoomDiscovery" style="display:none; margin-top:8px;">
+            👀 <b>發現了嗎？</b> 當我們視野極度放大時，原本彎曲的三次曲線在點 $A$ 附近<b>看起來就像是一條筆直的直線</b>！在數學上，我們稱這條局部極度貼合的直線為該點的<b>「切線」</b>。
+          </div>
+          <div class="btn-group">
+            <button class="btn-secondary" onclick="goToStep(1)">上一步</button>
+            <button class="btn-action" id="btnGoStep3" style="display:none;" onclick="goToStep(3)">進入步驟 3 ➔</button>
+          </div>
+        </div>
+
+        <!-- STEP 3 -->
+        <div class="step-content" id="step3" style="display:none;">
+          <p><b>🤔 思考問題：</b><br>如果我們想在坐標平面上求出這條「切線」的方程式，我們目前已經知道它通過點 <span class="math-pill">A</span> 了，還缺少什麼條件？</p>
+          <div class="quiz-options">
+            <div class="quiz-option" onclick="checkQuiz1(this, false)">A. 函數的最高次方</div>
+            <div class="quiz-option" onclick="checkQuiz1(this, true)">B. 直線的斜率（或直線上另一個點）</div>
+            <div class="quiz-option" onclick="checkQuiz1(this, false)">C. 坐標軸原點的位置</div>
+          </div>
+          <div class="quiz-feedback" id="quizFeedback1"></div>
+          <div class="btn-group">
+            <button class="btn-secondary" onclick="goToStep(2)">上一步</button>
+            <button class="btn-action" id="btnGoStep4" style="display:none;" onclick="goToStep(4)">進入步驟 4 ➔</button>
+          </div>
+        </div>
+
+        <!-- STEP 4 -->
+        <div class="step-content" id="step4" style="display:none;">
+          <p>但曲線上的切線只跟它局部貼合，我們手邊沒有第二個點，該怎麼求出斜率呢？</p>
+          <p>請觀察圖中在點 <span class="math-pill">A</span> 附近的 3 個點：<span style="color:#d97706;font-weight:bold;">P₁</span>、<span style="color:#0284c7;font-weight:bold;">P₂</span>、<span style="color:#7c3aed;font-weight:bold;">P₃</span>。<br>哪一個點與點 $A$ 所連成的割線，其斜率<b>最接近</b>切線的真實斜率？</p>
+          <div class="quiz-options">
+            <div class="quiz-option" onclick="checkQuiz2(this, false)">A. 距離較遠的 P₁ 割線</div>
+            <div class="quiz-option" onclick="checkQuiz2(this, false)">B. 中間距離的 P₂ 割線</div>
+            <div class="quiz-option" onclick="checkQuiz2(this, true)">C. 最靠近 A 點的 P₃ 割線</div>
+          </div>
+          <div class="quiz-feedback" id="quizFeedback2"></div>
+          <div class="btn-group">
+            <button class="btn-secondary" onclick="goToStep(3)">上一步</button>
+            <button class="btn-action" id="btnGoStep5" style="display:none;" onclick="goToStep(5)">動手操作驗證 ➔</button>
+          </div>
+        </div>
+
+        <!-- STEP 5 -->
+        <div class="step-content" id="step5" style="display:none;">
+          <p><b>🎯 動手體會：</b><br>是不是動點 <span class="math-pill" style="color:var(--danger)">P</span> 越靠近 <span class="math-pill">A</span>，兩點連線的斜率就與切線斜率越接近？請拖曳滑桿操作看看：</p>
+          <div class="control-item">
+            <label>動點 P 位置 (x)：<span id="labelPVal" style="color:var(--danger);">x = 1.60</span></label>
+            <input type="range" id="sliderP" min="-2.2" max="2.2" step="0.01" value="1.60">
+          </div>
+          <div style="background:#f1f5f9; padding:10px; border-radius:6px; font-size:0.88rem;">
+            割線 AP 斜率：<span class="math-pill" id="lblSecantM">m = --</span><br>
+            理論切線斜率：<span class="math-pill" id="lblTangentM" style="color:var(--success);">m = --</span>
+          </div>
+          <div class="btn-group">
+            <button class="btn-secondary" onclick="goToStep(4)">上一步</button>
+            <button class="btn-action" onclick="goToStep(6)">得到結論，總結定義 ➔</button>
+          </div>
+        </div>
+
+        <!-- STEP 6 -->
+        <div class="step-content" id="step6" style="display:none;">
+          <div class="definition-box">
+            <h4 style="color:#1e3a8a; margin-bottom:6px;">🎓 微分與切線斜率的定義</h4>
+            <p>當點 $P(x, f(x))$ 沿著曲線無窮靠近點 $A(a, f(a))$ 時：</p>
+            <ul style="padding-left:20px; margin:6px 0;">
+              <li>割線 $AP$ 的極限位置即為<b>「切線」</b>。</li>
+              <li>割線斜率的極限值即為<b>「切線斜率」</b>，數學上稱為函數在 $x=a$ 處的<b>導數</b>：</li>
+            </ul>
+            <div style="text-align:center; margin:8px 0; font-family:'Courier New', monospace; font-weight:bold; font-size:1.05rem; color:#1d4ed8;">
+              f'(a) = lim [f(x) - f(a)] / (x - a)
+            </div>
+          </div>
+          <p style="font-size:0.86rem; color:var(--text-muted); margin-top:6px;">你已成功完成了微積分的核心幾何建構！</p>
+          <button class="btn-secondary" style="width:100%; margin-top:8px;" onclick="goToStep(1)">🔄 重新換一個點探索</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const canvas = document.getElementById('graphCanvas');
+  const ctx = canvas.getContext('2d');
+  const canvasBox = document.getElementById('canvasBox');
+  const zoomHud = document.getElementById('zoomHud');
+
+  const sliderA = document.getElementById('sliderA');
+  const sliderP = document.getElementById('sliderP');
+  const labelAVal = document.getElementById('labelAVal');
+  const labelPVal = document.getElementById('labelPVal');
+  const lblSecantM = document.getElementById('lblSecantM');
+  const lblTangentM = document.getElementById('lblTangentM');
+
+  const btnZoomIn = document.getElementById('btnZoomIn');
+  const btnZoomOut = document.getElementById('btnZoomOut');
+  const btnDeepZoom = document.getElementById('btnDeepZoom');
+
+  // 函數：f(x) = x³ - 2x，f'(x) = 3x² - 2
+  const f = x => Math.pow(x, 3) - 2 * x;
+  const df = x => 3 * Math.pow(x, 2) - 2;
+
+  let currentStep = 1;
+  let zoomLevel = 1.0;
+  let panOffsetX = 0;
+  let panOffsetY = 0;
+  let isDragging = false;
+  let dragStartX = 0;
+  let dragStartY = 0;
+
+  function resizeCanvas() {
+    canvas.width = canvasBox.clientWidth * window.devicePixelRatio;
+    canvas.height = canvasBox.clientHeight * window.devicePixelRatio;
+    ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+    draw();
+  }
+  window.addEventListener('resize', resizeCanvas);
+
+  // 步驟切換
+  function goToStep(step) {
+    currentStep = step;
+    for (let i = 1; i <= 6; i++) {
+      document.getElementById(`step${i}`).style.display = (i === step) ? 'flex' : 'none';
+    }
+    document.getElementById('stepCounter').innerText = `${step} / 6`;
+    const headers = [
+      '步驟 1：任選曲線上的基準點',
+      '步驟 2：局部微觀放大觀察',
+      '步驟 3：求切線方程式還缺什麼？',
+      '步驟 4：割線斜率如何逼近切線？',
+      '步驟 5：動手操作動點 P 逼近',
+      '步驟 6：總結導數與切線定義'
+    ];
+    document.getElementById('stepHeader').innerText = headers[step - 1];
+
+    // 各步驟專屬視角初始化
+    if (step === 1) {
+      zoomLevel = 1.0; panOffsetX = 0; panOffsetY = 0;
+    } else if (step === 3 || step === 4) {
+      zoomLevel = 1.8; panOffsetX = 0; panOffsetY = 0;
+    } else if (step === 5) {
+      zoomLevel = 2.5; panOffsetX = 0; panOffsetY = 0;
+      sliderP.value = (parseFloat(sliderA.value) + 0.6).toFixed(2);
+    } else if (step === 6) {
+      zoomLevel = 1.5;
+    }
+    draw();
+  }
+
+  // 步驟 2 極致放大
+  btnDeepZoom.addEventListener('click', () => {
+    let target = 80;
+    let stepZoom = () => {
+      if (zoomLevel < target) {
+        zoomLevel += (target - zoomLevel) * 0.15;
+        if (target - zoomLevel < 0.5) zoomLevel = target;
+        draw();
+        requestAnimationFrame(stepZoom);
+      } else {
+        document.getElementById('zoomDiscovery').style.display = 'block';
+        document.getElementById('btnGoStep3').style.display = 'block';
+      }
+    };
+    stepZoom();
+  });
+
+  // 測驗 1
+  function checkQuiz1(elem, isCorrect) {
+    document.querySelectorAll('#step3 .quiz-option').forEach(el => el.classList.remove('selected'));
+    elem.classList.add('selected');
+    const fb = document.getElementById('quizFeedback1');
+    if (isCorrect) {
+      fb.className = 'quiz-feedback correct';
+      fb.innerHTML = '🎯 <b>完全正確！</b> 根據點斜式，通過已知點 $A(x_0, y_0)$ 的直線，我們只需要知道「斜率 $m$」（或線上相異的第二個點）就能寫出方程式！';
+      document.getElementById('btnGoStep4').style.display = 'block';
+    } else {
+      fb.className = 'quiz-feedback wrong';
+      fb.innerHTML = '❌ 不太對喔，回想一下高中直線的「點斜式」，已知通過點 $A$，還需要什麼幾何特徵呢？';
+    }
+  }
+
+  // 測驗 2
+  function checkQuiz2(elem, isCorrect) {
+    document.querySelectorAll('#step4 .quiz-option').forEach(el => el.classList.remove('selected'));
+    elem.classList.add('selected');
+    const fb = document.getElementById('quizFeedback2');
+    if (isCorrect) {
+      fb.className = 'quiz-feedback correct';
+      fb.innerHTML = '🎯 <b>賓果！</b> 越貼近點 $A$ 的點 $P_3$，連出來的割線方向與該處切線幾乎完美一致！';
+      document.getElementById('btnGoStep5').style.display = 'block';
+    } else {
+      fb.className = 'quiz-feedback wrong';
+      fb.innerHTML = '❌ 可以看一下左側畫布：距離較遠的點連線會受到曲線彎曲的影響，誤差較大喔！';
+    }
+  }
+
+  // 縮放與滾輪
+  function applyZoom(factor) {
+    zoomLevel = Math.min(150, Math.max(1, zoomLevel * factor));
+    draw();
+  }
+  btnZoomIn.addEventListener('click', () => applyZoom(1.3));
+  btnZoomOut.addEventListener('click', () => applyZoom(0.75));
+
+  window.addEventListener('wheel', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    if (e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom) {
+      e.preventDefault();
+      applyZoom(e.deltaY < 0 ? 1.15 : 0.85);
+    }
+  }, { passive: false });
+
+  // 點擊畫布選定點 A（步驟 1）
+  canvas.addEventListener('click', (e) => {
+    if (currentStep !== 1) return;
+    const rect = canvas.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const width = canvasBox.clientWidth;
+    const unitScale = (width / 5) * zoomLevel;
+    const axVal = parseFloat(sliderA.value);
+    const originX = width / 2 - (axVal * unitScale) + panOffsetX;
+    const mathX = (clickX - originX) / unitScale;
+    if (mathX >= -1.8 && mathX <= 1.8) {
+      sliderA.value = mathX.toFixed(2);
+      draw();
+    }
+  });
+
+  // 拖曳平移
+  canvas.addEventListener('mousedown', (e) => {
+    isDragging = true;
+    dragStartX = e.clientX - panOffsetX;
+    dragStartY = e.clientY - panOffsetY;
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    panOffsetX = e.clientX - dragStartX;
+    panOffsetY = e.clientY - dragStartY;
+    draw();
+  });
+  window.addEventListener('mouseup', () => { isDragging = false; });
+
+  sliderA.addEventListener('input', draw);
+  sliderP.addEventListener('input', draw);
+
+  // 繪圖核心
+  function draw() {
+    const width = canvasBox.clientWidth;
+    const height = canvasBox.clientHeight;
+    ctx.clearRect(0, 0, width, height);
+
+    const axVal = parseFloat(sliderA.value);
+    const ayVal = f(axVal);
+    const pxVal = parseFloat(sliderP.value);
+    const pyVal = f(pxVal);
+
+    labelAVal.innerText = `x = ${axVal.toFixed(2)}`;
+    labelPVal.innerText = `x = ${pxVal.toFixed(2)}`;
+
+    const unitScale = (width / 5) * zoomLevel;
+    const originX = width / 2 - (axVal * unitScale) + panOffsetX;
+    const originY = height / 2 + (ayVal * unitScale) + panOffsetY;
+
+    const toScreenX = x => originX + x * unitScale;
+    const toScreenY = y => originY - y * unitScale;
+    const toMathX = sx => (sx - originX) / unitScale;
+
+    // 1. 網格
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = '#e2e8f0';
+    const gridStep = zoomLevel > 35 ? 0.02 : (zoomLevel > 10 ? 0.1 : (zoomLevel > 4 ? 0.2 : 0.5));
+    const minX = toMathX(0);
+    const maxX = toMathX(width);
+    const startX = Math.floor(minX / gridStep) * gridStep;
+    for (let x = startX; x <= maxX; x += gridStep) {
+      ctx.beginPath(); ctx.moveTo(toScreenX(x), 0); ctx.lineTo(toScreenX(x), height); ctx.stroke();
+    }
+
+    // 2. 坐標軸
+    ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = 1.5;
+    const axisY = toScreenY(0); const axisX = toScreenX(0);
+    if (axisY >= 0 && axisY <= height) { ctx.beginPath(); ctx.moveTo(0, axisY); ctx.lineTo(width, axisY); ctx.stroke(); }
+    if (axisX >= 0 && axisX <= width) { ctx.beginPath(); ctx.moveTo(axisX, 0); ctx.lineTo(axisX, height); ctx.stroke(); }
+
+    // 3. 曲線 f(x)
+    ctx.lineWidth = 3; ctx.strokeStyle = '#2563eb'; ctx.beginPath();
+    let isStarted = false;
+    for (let sx = 0; sx <= width; sx += 2) {
+      const mx = toMathX(sx); const my = f(mx); const sy = toScreenY(my);
+      if (!isStarted) { ctx.moveTo(sx, sy); isStarted = true; } else { ctx.lineTo(sx, sy); }
+    }
+    ctx.stroke();
+
+    // 4. 理論切線 (步驟 2 以上或步驟 5, 6 顯示)
+    const mTangent = df(axVal);
+    const bTangent = ayVal - mTangent * axVal;
+    if (currentStep >= 2) {
+      ctx.lineWidth = 2; ctx.strokeStyle = '#16a34a'; ctx.beginPath();
+      const xL = toMathX(0); const xR = toMathX(width);
+      ctx.moveTo(0, toScreenY(mTangent * xL + bTangent));
+      ctx.lineTo(width, toScreenY(mTangent * xR + bTangent));
+      ctx.stroke();
+    }
+
+    // 5. 步驟 4 的 3 個候選逼近點 P1, P2, P3
+    if (currentStep === 4) {
+      const testOffsets = [
+        { dx: 0.7, color: '#d97706', label: 'P₁' },
+        { dx: 0.35, color: '#0284c7', label: 'P₂' },
+        { dx: 0.12, color: '#7c3aed', label: 'P₃' }
+      ];
+      testOffsets.forEach(pt => {
+        const testX = axVal + pt.dx;
+        const testY = f(testX);
+        const slope = (testY - ayVal) / pt.dx;
+        // 畫割線
+        ctx.lineWidth = 1.8; ctx.strokeStyle = pt.color; ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(0, toScreenY(ayVal + slope * (toMathX(0) - axVal)));
+        ctx.lineTo(width, toScreenY(ayVal + slope * (toMathX(width) - axVal)));
+        ctx.stroke();
+        ctx.setLineDash([]);
+        // 畫點
+        const sx = toScreenX(testX); const sy = toScreenY(testY);
+        ctx.fillStyle = pt.color; ctx.beginPath(); ctx.arc(sx, sy, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillText(pt.label, sx + 8, sy - 6);
+      });
+    }
+
+    // 6. 步驟 5, 6 的自由動態割線 AP
+    if (currentStep >= 5) {
+      const dx = pxVal - axVal;
+      const dy = pyVal - ayVal;
+      const mSec = Math.abs(dx) < 1e-4 ? mTangent : dy / dx;
+      lblSecantM.innerText = `m = ${mSec.toFixed(3)}`;
+      lblTangentM.innerText = `m = ${mTangent.toFixed(3)}`;
+
+      if (Math.abs(dx) >= 0.001) {
+        ctx.lineWidth = 2; ctx.strokeStyle = '#dc2626'; ctx.setLineDash([5, 4]);
+        ctx.beginPath();
+        ctx.moveTo(0, toScreenY(ayVal + mSec * (toMathX(0) - axVal)));
+        ctx.lineTo(width, toScreenY(ayVal + mSec * (toMathX(width) - axVal)));
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // 動點 P
+      const ptPx = toScreenX(pxVal); const ptPy = toScreenY(pyVal);
+      ctx.fillStyle = '#dc2626'; ctx.beginPath(); ctx.arc(ptPx, ptPy, 5.5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillText(`P(${pxVal.toFixed(2)}, ${pyVal.toFixed(2)})`, ptPx + 8, ptPy + 14);
+    }
+
+    // 7. 定點 A
+    const ptAx = toScreenX(axVal); const ptAy = toScreenY(ayVal);
+    ctx.fillStyle = '#0f172a'; ctx.beginPath(); ctx.arc(ptAx, ptAy, 6, 0, Math.PI * 2); ctx.fill();
+    ctx.font = '600 13px sans-serif';
+    ctx.fillText(`A(${axVal.toFixed(2)}, ${ayVal.toFixed(2)})`, ptAx + 8, ptAy - 8);
+
+    zoomHud.innerText = `倍率：${zoomLevel.toFixed(1)}x (支援滾輪/拖曳)`;
+  }
+
+  // 初次執行
+  resizeCanvas();
+</script>
+</body>
+</html>
